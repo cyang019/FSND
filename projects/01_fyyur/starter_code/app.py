@@ -8,6 +8,7 @@ import babel
 from flask import Flask, render_template, request, Response, flash, redirect, url_for
 from flask_moment import Moment
 from flask_sqlalchemy import SQLAlchemy
+from flask_migrate import Migrate
 import logging
 from logging import Formatter, FileHandler
 from flask_wtf import Form
@@ -19,43 +20,117 @@ from forms import *
 app = Flask(__name__)
 moment = Moment(app)
 app.config.from_object('config')
+app.config['SQLALCHEMY_DATABASE_URI'] = 'postgresql://postgres@localhost:5432/fyyur'
+app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 db = SQLAlchemy(app)
+migrate = Migrate(app, db)
 
 # TODO: connect to a local postgresql database
 
 #----------------------------------------------------------------------------#
 # Models.
 #----------------------------------------------------------------------------#
+class VenueGenre(db.Model):
+  __tablename__ = 'venue_genre'
+  __table_args__ = (
+    # db.UniqueConstraint('venue_id', 'venue_name'),
+    {'extend_existing': True}
+  )
+
+  id = db.Column(db.Integer, primary_key=True, nullable=False)
+  category = db.Column(db.String, nullable=False)
+  venue_id = db.Column(db.Integer, db.ForeignKey('venues.id'))
+  # venue_name = db.Column(db.String, db.ForeignKey('venues.name'))
+
+
+class ArtistGenre(db.Model):
+  __tablename__ = 'artist_genre'
+  __table_args__ = (
+    # db.UniqueConstraint('artist_id', 'artist_name'),
+    {'extend_existing': True}
+  )
+  
+  id = db.Column(db.Integer, primary_key=True, nullable=False)
+  category = db.Column(db.String, nullable=False)
+  artist_id = db.Column(db.Integer, db.ForeignKey('artists.id'))
+  # artist_name = db.Column(db.String, db.ForeignKey('artists.name'))
+
 
 class Venue(db.Model):
-    __tablename__ = 'Venue'
+    __tablename__ = 'venues'
+    __table_args__ = (
+      # db.UniqueConstraint('id', 'name'),
+      {'extend_existing': True}
+    )
 
-    id = db.Column(db.Integer, primary_key=True)
-    name = db.Column(db.String)
+    id = db.Column(db.Integer, primary_key=True, nullable=False)
+    name = db.Column(db.String, nullable=False, unique=True)
+    # genres = db.Column(db.String)
+    genres = db.relationship('VenueGenre', backref='venues', lazy=True, cascade="all, delete-orphan")
     city = db.Column(db.String(120))
     state = db.Column(db.String(120))
     address = db.Column(db.String(120))
     phone = db.Column(db.String(120))
-    image_link = db.Column(db.String(500))
+    website = db.Column(db.String)
     facebook_link = db.Column(db.String(120))
+    seeking_talent = db.Column(db.Boolean, nullable=False)
+    seeking_description = db.Column(db.String, nullable=True)
+    image_link = db.Column(db.String(500))
+    shows = db.relationship("Show", backref="venues")
 
     # TODO: implement any missing fields, as a database migration using Flask-Migrate
 
 class Artist(db.Model):
-    __tablename__ = 'Artist'
+    __tablename__ = 'artists'
+    __table_args__ = (
+      # db.UniqueConstraint('id', 'name', 'image_link'),
+      {'extend_existing': True}
+    )
 
-    id = db.Column(db.Integer, primary_key=True)
-    name = db.Column(db.String)
+    id = db.Column(db.Integer, primary_key=True, nullable=False)
+    name = db.Column(db.String, nullable=False)
+    # genres = db.Column(db.String(120))
+    genres = db.relationship('ArtistGenre', backref='artists', lazy=True, cascade="all, delete-orphan")
     city = db.Column(db.String(120))
     state = db.Column(db.String(120))
     phone = db.Column(db.String(120))
-    genres = db.Column(db.String(120))
-    image_link = db.Column(db.String(500))
+    website = db.Column(db.String)
     facebook_link = db.Column(db.String(120))
+    seeking_venue = db.Column(db.Boolean, nullable=False)
+    seeking_description = db.Column(db.String, nullable=True)
+    image_link = db.Column(db.String(500))
+    shows = db.relationship("Show", backref="artists")
+    
 
     # TODO: implement any missing fields, as a database migration using Flask-Migrate
 
 # TODO Implement Show and Artist models, and complete all model relationships and properties, as a database migration.
+
+
+class Show(db.Model):
+  __tablename__ = 'shows'
+  __table_args__ = (
+    # db.UniqueConstraint('artist_id', 'artist_name', 'artist_image_link'),
+    # db.UniqueConstraint('venue_id', 'venue_name'),
+    {'extend_existing': True},
+  )
+  id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+  start_time = db.Column(db.String, nullable=False)
+  venue_id = db.Column(db.Integer, db.ForeignKey('venues.id'), nullable=False)
+  # venue_name = db.Column(db.String, db.ForeignKey('venues.name'), nullable=False)
+  artist_id = db.Column(db.Integer, db.ForeignKey('artists.id'), nullable=False)
+  # artist_name = db.Column(db.String, db.ForeignKey('artists.name'), nullable=False)
+  # artist_image_link = db.Column(db.String(500), db.ForeignKey('artists.image_link'))
+
+# shows = db.Table('shows',
+#   db.Column('id', db.Integer, primary_key=True),
+#   db.Column('start_time', db.String, nullable=False),
+#   db.Column('venue_id', db.Integer, db.ForeignKey('Venue.id'), primary_key=True),
+#   # db.Column('venue_name', db.String, db.ForeignKey('Venue.name'), nullable=False),
+#   db.Column('artist_id', db.Integer, db.ForeignKey('Artist.id'), primary_key=True),
+#   # db.Column('artist_name', db.String, db.ForeignKey('Artist.name'), nullable=False),
+#   # db.Column('artist_image_link', db.String(500), db.ForeignKey('Artist.image_link'))
+# )
 
 #----------------------------------------------------------------------------#
 # Filters.
