@@ -140,11 +140,13 @@ def convert_str_to_datetime(datetime_str):
   return date_time_obj
 
 
-def count_upcoming_shows(venue_id):
+def count_future_shows(venue_id):
   current_time = datetime.now(timezone.utc)
-  shows = Show.query.filter(Show.start_time > current_time).all()
-  print(shows)
-  return 0
+  shows = Show.query.filter(Show.venue_id==venue_id, Show.start_time > current_time).all()
+  count = 0
+  if shows is not None and hasattr(shows, '__len__'):
+    count = len(shows)
+  return count
 
 
 @app.route('/venues')
@@ -168,9 +170,9 @@ def venues():
       venue_info = {
         "id": venue.id,
         "name": venue.name,
-        "num_upcoming_shows": count_upcoming_shows(venue.id)
+        "num_upcoming_shows": count_future_shows(venue.id)
       }
-    print(venues)
+      data[idx]['venues'].append(venue_info)
   except Exception as e:
     db.session.rollback()
     print(f'[error] retrieving venues.')
@@ -178,29 +180,29 @@ def venues():
   finally:
     db.session.close()
 
-  # TODO: replace with real venues data.
-  #       num_shows should be aggregated based on number of upcoming shows per venue.
-  data=[{
-    "city": "San Francisco",
-    "state": "CA",
-    "venues": [{
-      "id": 1,
-      "name": "The Musical Hop",
-      "num_upcoming_shows": 0,
-    }, {
-      "id": 3,
-      "name": "Park Square Live Music & Coffee",
-      "num_upcoming_shows": 1,
-    }]
-  }, {
-    "city": "New York",
-    "state": "NY",
-    "venues": [{
-      "id": 2,
-      "name": "The Dueling Pianos Bar",
-      "num_upcoming_shows": 0,
-    }]
-  }]
+  # # TODO: replace with real venues data.
+  # #       num_shows should be aggregated based on number of upcoming shows per venue.
+  # data=[{
+  #   "city": "San Francisco",
+  #   "state": "CA",
+  #   "venues": [{
+  #     "id": 1,
+  #     "name": "The Musical Hop",
+  #     "num_upcoming_shows": 0,
+  #   }, {
+  #     "id": 3,
+  #     "name": "Park Square Live Music & Coffee",
+  #     "num_upcoming_shows": 1,
+  #   }]
+  # }, {
+  #   "city": "New York",
+  #   "state": "NY",
+  #   "venues": [{
+  #     "id": 2,
+  #     "name": "The Dueling Pianos Bar",
+  #     "num_upcoming_shows": 0,
+  #   }]
+  # }]
   if not error:
     return render_template('pages/venues.html', areas=data)
   else:
