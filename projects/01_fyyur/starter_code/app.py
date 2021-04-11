@@ -2,10 +2,11 @@
 # Imports
 #----------------------------------------------------------------------------#
 
+import sys
 import json
 import dateutil.parser
 import babel
-from flask import Flask, render_template, request, Response, flash, redirect, url_for
+from flask import Flask, render_template, request, Response, flash, redirect, url_for, abort
 from flask_moment import Moment
 from flask_sqlalchemy import SQLAlchemy
 from flask_migrate import Migrate
@@ -13,6 +14,7 @@ import logging
 from logging import Formatter, FileHandler
 from flask_wtf import Form
 from forms import *
+from datetime import datetime, timezone
 #----------------------------------------------------------------------------#
 # App Config.
 #----------------------------------------------------------------------------#
@@ -20,12 +22,12 @@ from forms import *
 app = Flask(__name__)
 moment = Moment(app)
 app.config.from_object('config')
+# connect to a local postgresql database
 app.config['SQLALCHEMY_DATABASE_URI'] = 'postgresql://postgres@localhost:5432/fyyur'
+# avoid warning message
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 db = SQLAlchemy(app)
-migrate = Migrate(app, db)
-
-# TODO: connect to a local postgresql database
+migrate = Migrate(app, db, compare_type=True)
 
 #----------------------------------------------------------------------------#
 # Models.
@@ -33,7 +35,6 @@ migrate = Migrate(app, db)
 class VenueGenre(db.Model):
   __tablename__ = 'venue_genre'
   __table_args__ = (
-    # db.UniqueConstraint('venue_id', 'venue_name'),
     {'extend_existing': True}
   )
 
@@ -46,7 +47,6 @@ class VenueGenre(db.Model):
 class ArtistGenre(db.Model):
   __tablename__ = 'artist_genre'
   __table_args__ = (
-    # db.UniqueConstraint('artist_id', 'artist_name'),
     {'extend_existing': True}
   )
   
@@ -59,7 +59,6 @@ class ArtistGenre(db.Model):
 class Venue(db.Model):
     __tablename__ = 'venues'
     __table_args__ = (
-      # db.UniqueConstraint('id', 'name'),
       {'extend_existing': True}
     )
 
@@ -78,12 +77,9 @@ class Venue(db.Model):
     image_link = db.Column(db.String(500))
     shows = db.relationship("Show", backref="venues")
 
-    # TODO: implement any missing fields, as a database migration using Flask-Migrate
-
 class Artist(db.Model):
     __tablename__ = 'artists'
     __table_args__ = (
-      # db.UniqueConstraint('id', 'name', 'image_link'),
       {'extend_existing': True}
     )
 
@@ -100,38 +96,19 @@ class Artist(db.Model):
     seeking_description = db.Column(db.String, nullable=True)
     image_link = db.Column(db.String(500))
     shows = db.relationship("Show", backref="artists")
-    
-
-    # TODO: implement any missing fields, as a database migration using Flask-Migrate
-
-# TODO Implement Show and Artist models, and complete all model relationships and properties, as a database migration.
 
 
 class Show(db.Model):
   __tablename__ = 'shows'
   __table_args__ = (
-    # db.UniqueConstraint('artist_id', 'artist_name', 'artist_image_link'),
-    # db.UniqueConstraint('venue_id', 'venue_name'),
     {'extend_existing': True},
   )
   id = db.Column(db.Integer, primary_key=True, autoincrement=True)
-  start_time = db.Column(db.String, nullable=False)
+  start_time = db.Column(db.DateTime(timezone=True), nullable=True, 
+                         default=datetime.now(timezone.utc))
   venue_id = db.Column(db.Integer, db.ForeignKey('venues.id'), nullable=False)
-  # venue_name = db.Column(db.String, db.ForeignKey('venues.name'), nullable=False)
   artist_id = db.Column(db.Integer, db.ForeignKey('artists.id'), nullable=False)
-  # artist_name = db.Column(db.String, db.ForeignKey('artists.name'), nullable=False)
-  # artist_image_link = db.Column(db.String(500), db.ForeignKey('artists.image_link'))
-
-# shows = db.Table('shows',
-#   db.Column('id', db.Integer, primary_key=True),
-#   db.Column('start_time', db.String, nullable=False),
-#   db.Column('venue_id', db.Integer, db.ForeignKey('Venue.id'), primary_key=True),
-#   # db.Column('venue_name', db.String, db.ForeignKey('Venue.name'), nullable=False),
-#   db.Column('artist_id', db.Integer, db.ForeignKey('Artist.id'), primary_key=True),
-#   # db.Column('artist_name', db.String, db.ForeignKey('Artist.name'), nullable=False),
-#   # db.Column('artist_image_link', db.String(500), db.ForeignKey('Artist.image_link'))
-# )
-
+  
 #----------------------------------------------------------------------------#
 # Filters.
 #----------------------------------------------------------------------------#
@@ -157,9 +134,50 @@ def index():
 
 #  Venues
 #  ----------------------------------------------------------------
+def convert_str_to_datetime(datetime_str):
+  pattern = r'%Y-%m-%dT%H:%M:%S.%fZ'
+  date_time_obj = datetime.strptime(datetime_str, pattern)
+  return date_time_obj
+
+
+def count_upcoming_shows(venue_id):
+  current_time = datetime.now(timezone.utc)
+  shows = Show.query.filter(Show.start_time > current_time).all()
+  print(shows)
+  return 0
+
 
 @app.route('/venues')
 def venues():
+  error = False
+  data = []
+  try:
+    venues = Venue.query.all()
+    locations = []
+    for venue in venues:
+      location = (venue.city, venue.state)
+      if location not in locations:
+        temp = {
+          "city": venue.city,
+          "state": venue.state,
+          "venues": []
+        }
+        data.append(temp)
+        locations.append(location)
+      idx = locations.index(location)
+      venue_info = {
+        "id": venue.id,
+        "name": venue.name,
+        "num_upcoming_shows": count_upcoming_shows(venue.id)
+      }
+    print(venues)
+  except Exception as e:
+    db.session.rollback()
+    print(f'[error] retrieving venues.')
+    print(sys.exc_info())
+  finally:
+    db.session.close()
+
   # TODO: replace with real venues data.
   #       num_shows should be aggregated based on number of upcoming shows per venue.
   data=[{
@@ -183,7 +201,10 @@ def venues():
       "num_upcoming_shows": 0,
     }]
   }]
-  return render_template('pages/venues.html', areas=data);
+  if not error:
+    return render_template('pages/venues.html', areas=data)
+  else:
+    abort(500)
 
 @app.route('/venues/search', methods=['POST'])
 def search_venues():
