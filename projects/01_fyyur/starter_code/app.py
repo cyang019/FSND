@@ -140,9 +140,18 @@ def convert_str_to_datetime(datetime_str):
   return date_time_obj
 
 
-def count_future_shows(venue_id):
+def count_future_shows(item_id, category=None):
   current_time = datetime.now(timezone.utc)
-  shows = Show.query.filter(Show.venue_id==venue_id, Show.start_time > current_time).all()
+  shows = None
+  if category is None:
+    shows = Show.query.filter(Show.id == item_id, Show.start_time > current_time).all()
+  else:
+    if category == 'venue':
+      shows = Show.query.filter(Show.venue_id==item_id, Show.start_time > current_time).all()
+    elif category == 'artist':
+      shows = Show.query.filter(Show.artist_id==item_id, Show.start_time > current_time).all()
+    else:
+      raise NotImplementedError
   count = 0
   if shows is not None and hasattr(shows, '__len__'):
     count = len(shows)
@@ -170,7 +179,7 @@ def venues():
       venue_info = {
         "id": venue.id,
         "name": venue.name,
-        "num_upcoming_shows": count_future_shows(venue.id)
+        "num_upcoming_shows": count_future_shows(venue.id, 'venue')
       }
       data[idx]['venues'].append(venue_info)
   except Exception as e:
@@ -210,18 +219,49 @@ def venues():
 
 @app.route('/venues/search', methods=['POST'])
 def search_venues():
-  # TODO: implement search on artists with partial string search. Ensure it is case-insensitive.
+  print('process post request for serach_venues...')
+  error = False
+  response = {}
+  try:
+    search_term = request.form.get('search_term', '')
+    print(f'search_term: {search_term}')
+    data = Venue.query.filter(Venue.name.ilike(f'%{search_term}%')).all()
+    if data is not None:
+      response["count"] = len(data)
+      response["data"] = []
+      for item in data:
+        temp = {
+          'id': item.id,
+          'name': item.name,
+          'num_upcoming_shows': count_future_shows(item.id, category='venue')
+        }
+        response['data'].append(temp)
+  except Exception as e:
+    db.session.rollback()
+    error = True
+    print(f'error in search_venues(): {e}')
+    print(sys.exc_info())
+  finally:
+    db.session.close()
+  
+  if not error:
+    return render_template('pages/search_venues.html', 
+    results=response, 
+    search_term=search_term)
+  else:
+    abort(500)
+  # TODO: implement search on venues with partial string search. Ensure it is case-insensitive.
   # seach for Hop should return "The Musical Hop".
   # search for "Music" should return "The Musical Hop" and "Park Square Live Music & Coffee"
-  response={
-    "count": 1,
-    "data": [{
-      "id": 2,
-      "name": "The Dueling Pianos Bar",
-      "num_upcoming_shows": 0,
-    }]
-  }
-  return render_template('pages/search_venues.html', results=response, search_term=request.form.get('search_term', ''))
+  # response={
+  #   "count": 1,
+  #   "data": [{
+  #     "id": 2,
+  #     "name": "The Dueling Pianos Bar",
+  #     "num_upcoming_shows": 0,
+  #   }]
+  # }
+  
 
 @app.route('/venues/<int:venue_id>')
 def show_venue(venue_id):
