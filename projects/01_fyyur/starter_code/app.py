@@ -642,7 +642,10 @@ def edit_artist_submission(artist_id):
     artist.website = request.form['website_link']
     artist.facebook_link = request.form['facebook_link']
     artist.image_link = request.form['image_link']
-    artist.seeking_venue = request.form['seeking_venue'] == 'y'
+    if 'seeking_venue' in request.form:
+      artist.seeking_venue = request.form['seeking_venue'] == 'y'
+    else:
+      artist.seeking_venue = False
     if artist.seeking_venue:
       artist.seeking_description = request.form['seeking_description']
     else:
@@ -715,8 +718,11 @@ def edit_venue_submission(venue_id):
     venue.website = request.form['website_link']
     venue.facebook_link = request.form['facebook_link']
     venue.image_link = request.form['image_link']
-    venue.seeking_venue = request.form['seeking_talent'] == 'y'
-    if venue.seeking_venue:
+    if 'seeking_talent' in request.form:
+      venue.seeking_talent = request.form['seeking_talent'] == 'y'
+    else:
+      venue.seeking_talent = False
+    if venue.seeking_talent:
       venue.seeking_description = request.form['seeking_description']
     else:
       venue.seeking_description = ''
@@ -726,6 +732,7 @@ def edit_venue_submission(venue_id):
     print(f'error submitting venue {venue_id}.')
     print(e)
     print(sys.exc_info())
+    print(request.form)
     db.session.rollback()
   finally:
     db.session.close()
