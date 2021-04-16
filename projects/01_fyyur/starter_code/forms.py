@@ -5,19 +5,19 @@ from wtforms.validators import DataRequired, AnyOf, URL, ValidationError
 import re
 
 
-def validate_genre(form, field):
-    print(f'validate_genre: {field}')
+def check_genre(form, genre):
+    print(f'genre: {genre.data}')
 
-def validate_phone(form, field):
-    print(f'validate_phone: {field}')
-    # phone_str = field.data
-    # pattern = r'[0-9]{3}[- ]?[0-9]{3}[- ]?[0-9]{4}[ -]*'
-    # found = re.match(pattern, phone_str.strip())
-    # if not found:
-    #     raise ValidationError('Incorrect phone format.')
+def check_phone(form, phone):
+    print(f'phone: {phone.data}')
+    phone_str = phone.data
+    pattern = r'^[0-9]{3}[- ]?[0-9]{3}[- ]?[0-9]{4}[ ]*$'
+    found = re.match(pattern, phone_str.strip())
+    if not found:
+        raise ValidationError('Incorrect phone format.')
 
-def validate_fb_link(form, field):
-    print(f'validate_fb_link: {field}')
+def check_fb_link(form, facebook_link):
+    print(f'fb_link: {facebook_link.data}')
 
 class ShowForm(Form):
     artist_id = StringField(
@@ -99,14 +99,14 @@ class VenueForm(Form):
         'address', validators=[DataRequired()]
     )
     phone = StringField(
-        'phone', validators=[validate_phone]
+        'phone'
     )
     image_link = StringField(
         'image_link'
     )
     genres = SelectMultipleField(
         # TODO implement enum restriction
-        'genres', validators=[DataRequired(), validate_genre],
+        'genres', validators=[DataRequired()],
         choices=[
             ('Alternative', 'Alternative'),
             ('Blues', 'Blues'),
@@ -142,8 +142,12 @@ class VenueForm(Form):
         'seeking_description'
     )
 
-    
-
+    def validate_phone(self, phone):
+        phone_str = phone.data
+        pattern = r'^[0-9]{3}[- ]?[0-9]{3}[- ]?[0-9]{4}[ ]*$'
+        found = re.match(pattern, phone_str.strip())
+        if not found:
+            raise ValidationError('Incorrect phone format.')
 
 
 class ArtistForm(Form):
@@ -211,7 +215,7 @@ class ArtistForm(Form):
     )
     phone = StringField(
         # TODO implement validation logic for state
-        'phone', validators=[validate_phone]
+        'phone'
     )
     image_link = StringField(
         'image_link'
@@ -242,7 +246,7 @@ class ArtistForm(Form):
      )
     facebook_link = StringField(
         # TODO implement enum restriction
-        'facebook_link', validators=[URL(), validate_fb_link]
+        'facebook_link', validators=[URL()]
      )
 
     website_link = StringField(
@@ -254,4 +258,11 @@ class ArtistForm(Form):
     seeking_description = StringField(
             'seeking_description'
      )
+    
+    def validate_phone(self, phone):
+        phone_str = phone.data
+        pattern = r'^[0-9]{3}[- ]?[0-9]{3}[- ]?[0-9]{4}[ ]*$'
+        found = re.match(pattern, phone_str.strip())
+        if not found:
+            raise ValidationError('Incorrect phone format.')
 

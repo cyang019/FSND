@@ -244,17 +244,30 @@ def search_venues():
   try:
     search_term = request.form.get('search_term', '')
     print(f'search_term: {search_term}')
-    data = Venue.query.filter(Venue.name.ilike(f'%{search_term}%')).all()
+    query = db.session.query(
+      Venue.id,
+      Venue.name,
+      Show.start_time
+    ).join(Show, Show.venue_id == Venue.id)
+    current_time = datetime.now(timezone.utc)
+    data = query.filter(Venue.name.ilike(f'%{search_term}%')).all()
     if data is not None:
-      response["count"] = len(data)
       response["data"] = []
+      key_locations = {}
       for item in data:
-        temp = {
-          'id': item.id,
-          'name': item.name,
-          'num_upcoming_shows': count_future_shows(item.id, category='venue')
-        }
-        response['data'].append(temp)
+        if item[0] in key_locations:
+          key_id = item[0]
+        else:
+          temp = {
+            'id': item[0],
+            'name': item[1],
+            'num_upcoming_shows': 0
+          }
+          key_locations[item[0]] = len(response["data"])
+          response['data'].append(temp)
+        if item[2] > current_time:
+          response["data"][key_locations[item[0]]]["num_upcoming_shows"] += 1
+      response["count"] = len(key_locations)
   except Exception as e:
     db.session.rollback()
     error = True
@@ -295,7 +308,14 @@ def show_venue(venue_id):
   error = False
   data={}
   try:
-    venue = Venue.query.get(venue_id)
+    query = db.session.query(
+      Venue, Artist, Show
+    ).join(Show, Venue.id == Show.venue_id).join(Artist, Artist.id == Show.artist_id)
+    results = query.filter(Venue.id == venue_id).all()
+    if results is None or len(results) == 0:
+      venue = Venue.query.get(venue_id)
+    else:
+      venue = results[0][0]
     data['id'] = venue.id
     data['name'] = venue.name
     data['genres'] = [item.category for item in venue.genres]
@@ -313,29 +333,21 @@ def show_venue(venue_id):
     data['upcoming_shows'] = []
     data['past_shows_count'] = 0
     data['upcoming_shows_count'] = 0
-    past_shows = search_past_shows(venue_id, category='venue')
-    future_shows = search_future_shows(venue_id, category='venue')
-    fmt = ''
-    for show in past_shows:
-      artist = Artist.query.get(show.artist_id)
+    fmt = '%Y-%m-%dT%H:%M:%S.%f'
+    current_time = datetime.now(timezone.utc)
+    for _, artist, show in results:
       temp = {
         'artist_id': show.artist_id,
         'artist_name': artist.name,
         'artist_image_link': artist.image_link,
-        'start_time': show.start_time.strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3] + 'Z'
+        'start_time': show.start_time.strftime(fmt)[:-3] + 'Z'
       }
-      data['past_shows'].append(temp)
-      data['past_shows_count'] += 1
-    for show in future_shows:
-      artist = Artist.query.get(show.artist_id)
-      temp = {
-        'artist_id': show.artist_id,
-        'artist_name': artist.name,
-        'artist_image_link': artist.image_link,
-        'start_time': show.start_time.strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3] + 'Z'
-      }
-      data['upcoming_shows'].append(temp)
-      data['upcoming_shows_count'] += 1
+      if show.start_time > current_time:
+        data['upcoming_shows_count'] += 1
+        data['upcoming_shows'].append(temp)
+      else:
+        data['past_shows_count'] += 1
+        data['past_shows'].append(temp)
   except Exception as e:
     error = True
     print(f'error showing venue for {venue_id}.')
@@ -403,8 +415,7 @@ def create_venue_submission():
   # TODO: on unsuccessful db insert, flash an error instead.
   # e.g., flash('An error occurred. Venue ' + data.name + ' could not be listed.')
   # see: http://flask.pocoo.org/docs/1.0/patterns/flashing/
-  if not error and venue_id is not None:
-    data = Venue.query.filter_by(name=request.form['name']).first()
+  if not error:
     flash('Venue ' + request.form['name'] + ' was successfully listed!')
     return redirect(url_for('show_venue_by_name', venue_name=request.form['name']))
   else:
@@ -475,17 +486,30 @@ def search_artists():
   try:
     search_term = request.form.get('search_term', '')
     print(f'search_term: {search_term}')
-    data = Artist.query.filter(Artist.name.ilike(f'%{search_term}%')).all()
+    query = db.session.query(
+      Artist.id,
+      Artist.name,
+      Show.start_time
+    ).join(Show, Show.artist_id == Artist.id)
+    data = query.filter(Artist.name.ilike(f'%{search_term}%')).all()
     if data is not None:
-      response["count"] = len(data)
+      keys = []
       response["data"] = []
-      for item in data:
-        temp = {
-          'id': item.id,
-          'name': item.name,
-          'num_upcoming_shows': count_future_shows(item.id, category='artist')
-        }
-        response['data'].append(temp)
+      current_time = datetime.now(timezone.utc)
+      for artist_id, artist_name, show_start_time in data:
+        idx = 0
+        if artist_id not in keys:
+          temp = {
+            'id': artist_id,
+            'name': artist_name,
+            'num_upcoming_shows': 0
+          }
+          response['data'].append(temp)
+          keys.append(artist_id)
+        idx = keys.index(artist_id)
+        if show_start_time > current_time:
+          response["data"][idx]["num_upcoming_shows"] += 1
+      response["count"] = len(keys)
   except Exception as e:
     db.session.rollback()
     error = True
@@ -503,15 +527,7 @@ def search_artists():
   # TODO: implement search on artists with partial string search. Ensure it is case-insensitive.
   # seach for "A" should return "Guns N Petals", "Matt Quevado", and "The Wild Sax Band".
   # search for "band" should return "The Wild Sax Band".
-  # response={
-  #   "count": 1,
-  #   "data": [{
-  #     "id": 4,
-  #     "name": "Guns N Petals",
-  #     "num_upcoming_shows": 0,
-  #   }]
-  # }
-  # return render_template('pages/search_artists.html', results=response, search_term=request.form.get('search_term', ''))
+
 
 @app.route('/artists/<artist_name>')
 def show_artist_by_name(artist_name):
@@ -535,7 +551,14 @@ def show_artist(artist_id):
   error = False
   data={}
   try:
-    artist = Artist.query.get(artist_id)
+    query = db.session.query(
+      Artist, Venue, Show
+    ).join(Show, Show.artist_id == Artist.id).join(Venue, Venue.id == Show.venue_id)
+    results = query.filter(Artist.id == artist_id).all()
+    if results is None or len(results) == 0:
+      artist = Artist.query.get(artist_id)
+    else:
+      artist = results[0][0]
     data['id'] = artist.id
     data['name'] = artist.name
     data['genres'] = [item.category for item in artist.genres]
@@ -552,29 +575,21 @@ def show_artist(artist_id):
     data['upcoming_shows'] = []
     data['past_shows_count'] = 0
     data['upcoming_shows_count'] = 0
-    past_shows = search_past_shows(artist_id, category='artist')
-    future_shows = search_future_shows(artist_id, category='artist')
-    fmt = ''
-    for show in past_shows:
-      venue = Venue.query.get(show.venue_id)
+    fmt = '%Y-%m-%dT%H:%M:%S.%f'
+    current_time = datetime.now(timezone.utc)
+    for _, venue, show in results:
       temp = {
         'venue_id': show.venue_id,
         'venue_name': venue.name,
         'venue_image_link': venue.image_link,
-        'start_time': show.start_time.strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3] + 'Z'
+        'start_time': show.start_time.strftime(fmt)[:-3] + 'Z'
       }
-      data['past_shows'].append(temp)
-      data['past_shows_count'] += 1
-    for show in future_shows:
-      venue = Venue.query.get(show.venue_id)
-      temp = {
-        'venue_id': show.venue_id,
-        'venue_name': venue.name,
-        'venue_image_link': venue.image_link,
-        'start_time': show.start_time.strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3] + 'Z'
-      }
-      data['upcoming_shows'].append(temp)
-      data['upcoming_shows_count'] += 1
+      if show.start_time > current_time:
+        data['upcoming_shows_count'] += 1
+        data['upcoming_shows'].append(temp)
+      else:
+        data['past_shows_count'] += 1
+        data['past_shows'].append(temp)
   except Exception as e:
     error = True
     print(f'error showing venue for {artist_id}.')
@@ -809,18 +824,24 @@ def shows():
   data = []
   error = False
   try:
-    shows = Show.query.all()
+    query = db.session.query(
+      Show.venue_id,
+      Show.artist_id,
+      Show.start_time,
+      Venue.name,
+      Artist.name,
+      Artist.image_link
+    ).join(Artist, Artist.id == Show.artist_id).join(Venue, Venue.id == Show.venue_id)
+    shows = query.all()
     for show in shows:
       temp = {
-        "venue_id": show.venue_id,
-        "artist_id": show.artist_id,
-        "start_time": show.start_time.strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3] + 'Z'
+        "venue_id": show[0],
+        "artist_id": show[1],
+        "start_time": show[2].strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3] + 'Z',
+        "venue_name": show[3],
+        "artist_name": show[4],
+        "artist_image_link": show[5]
       }
-      artist = Artist.query.get(show.artist_id)
-      venue = Venue.query.get(show.venue_id)
-      temp["venue_name"] = venue.name
-      temp["artist_name"] = artist.name
-      temp["artist_image_link"] = artist.image_link
       data.append(temp)
   except Exception as e:
     print(f'error showing shows: {e}')
